@@ -42,6 +42,7 @@ export default function OnboardingPage() {
 
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
   const [level, setLevel] = useState<EducationLevel>("gcse");
   const [yearOrGroup, setYearOrGroup] = useState("");
   const [school, setSchool] = useState("");
@@ -55,7 +56,14 @@ export default function OnboardingPage() {
   }
 
   function finish() {
-    createProfile({ name: name.trim() || "Student", educationLevel: level, yearOrGroup: yearOrGroup.trim(), schoolOrCollege: school.trim() || undefined, examBoard: board });
+    createProfile({
+      name: name.trim() || "Student",
+      dateOfBirth: dateOfBirth || undefined,
+      educationLevel: level,
+      yearOrGroup: yearOrGroup.trim(),
+      schoolOrCollege: school.trim() || undefined,
+      examBoard: board,
+    });
     activateSubjects(subjects.length ? subjects : ["maths"]);
     completeOnboarding();
     router.push(`/onboarding/diagnostic?subjects=${(subjects.length ? subjects : ["maths"]).join(",")}`);
@@ -100,6 +108,12 @@ export default function OnboardingPage() {
               <div className="mt-6 flex flex-col gap-4">
                 <Field label="First name">
                   <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" />
+                </Field>
+                <Field label="Date of birth (optional)">
+                  <input type="date" className="input" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} max={new Date().toISOString().split("T")[0]} />
+                  <p className="mt-1.5 text-xs text-[var(--color-ink-faint)]">
+                    Only used to pitch content at the right age — you can leave this blank.
+                  </p>
                 </Field>
                 <Field label="School or college (optional)">
                   <input className="input" value={school} onChange={(e) => setSchool(e.target.value)} placeholder="Optional" />

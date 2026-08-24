@@ -9,6 +9,7 @@ import { useStore } from "@/lib/store";
 import { Button, Card, Pill } from "@/components/ui";
 import { icon } from "@/components/subjectIcon";
 import { MiniQuiz } from "@/components/MiniQuiz";
+import { RichEditor } from "@/components/RichEditor";
 import { getQuestionsForTopic } from "@/lib/diagnostics";
 import type { SubjectId } from "@/lib/types";
 
@@ -157,12 +158,11 @@ function NotesTab({ subjectId }: { subjectId: SubjectId }) {
               placeholder="Lesson title"
             />
             <p className="mb-3 text-xs text-[var(--color-ink-faint)]">Autosaves as you type · last updated {new Date(active.updatedAt).toLocaleString("en-GB")}</p>
-            <div
-              contentEditable
-              suppressContentEditableWarning
-              className="thin-scroll min-h-[300px] rounded-xl border border-[var(--color-line)] p-4 text-[15px] leading-relaxed outline-none"
-              onBlur={(e) => upsertNote({ id: active.id, subjectId, contentHtml: e.currentTarget.innerHTML })}
-              dangerouslySetInnerHTML={{ __html: active.contentHtml }}
+            <RichEditor
+              html={active.contentHtml}
+              onChange={(contentHtml) => upsertNote({ id: active.id, subjectId, contentHtml })}
+              placeholder="Start writing…"
+              minHeight={300}
             />
           </div>
         ) : (

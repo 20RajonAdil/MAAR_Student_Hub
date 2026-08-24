@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { useRequireProfile } from "@/lib/useRequireProfile";
 import { useStore } from "@/lib/store";
 import { Button, Card } from "@/components/ui";
+import { RichEditor } from "@/components/RichEditor";
 
 export default function NotesPage() {
   const { ready } = useRequireProfile();
@@ -85,12 +86,11 @@ export default function NotesPage() {
                   </Button>
                 </div>
                 <p className="mb-3 text-xs text-[var(--color-ink-faint)]">Autosaves as you type · last updated {new Date(active.updatedAt).toLocaleString("en-GB")}</p>
-                <div
-                  contentEditable
-                  suppressContentEditableWarning
-                  className="thin-scroll min-h-[400px] rounded-xl border border-[var(--color-line)] p-4 text-[15px] leading-relaxed outline-none"
-                  onBlur={(e) => upsertNote({ id: active.id, subjectId: active.subjectId, contentHtml: e.currentTarget.innerHTML })}
-                  dangerouslySetInnerHTML={{ __html: active.contentHtml }}
+                <RichEditor
+                  html={active.contentHtml}
+                  onChange={(contentHtml) => upsertNote({ id: active.id, subjectId: active.subjectId, contentHtml })}
+                  placeholder="Start writing…"
+                  minHeight={400}
                 />
               </div>
             ) : (
