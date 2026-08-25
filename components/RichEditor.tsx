@@ -192,9 +192,10 @@ export function RichEditor({
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
+        dir="ltr"
         data-placeholder={placeholder}
         className="thin-scroll rich-editor overflow-y-auto rounded-b-xl rounded-t-none border border-[var(--color-line)] p-4 text-[15px] leading-relaxed outline-none"
-        style={{ minHeight }}
+        style={{ minHeight, direction: "ltr", unicodeBidi: "normal" }}
         onInput={sync}
         onBlur={sync}
         dangerouslySetInnerHTML={{ __html: html }}
@@ -208,6 +209,13 @@ export function RichEditor({
           font-size: 12.5px;
           background: white;
           color: var(--color-ink);
+        }
+        .rich-editor {
+          direction: ltr;
+        }
+        .rich-editor,
+        .rich-editor * {
+          unicode-bidi: normal;
         }
         .rich-editor:empty::before {
           content: attr(data-placeholder);

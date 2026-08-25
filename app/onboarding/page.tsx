@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, ArrowLeft, ShieldCheck } from "lucide-react";
@@ -39,6 +39,16 @@ export default function OnboardingPage() {
   const createProfile = useStore((s) => s.createProfile);
   const activateSubjects = useStore((s) => s.activateSubjects);
   const completeOnboarding = useStore((s) => s.completeOnboarding);
+  const existingProfile = useStore((s) => s.profile);
+  const hasHydrated = useStore((s) => s.hasHydrated);
+
+  // A returning student with a finished profile should never be sent back
+  // through onboarding — send them straight to their dashboard instead.
+  useEffect(() => {
+    if (hasHydrated && existingProfile?.onboardingComplete) {
+      router.replace("/dashboard");
+    }
+  }, [hasHydrated, existingProfile, router]);
 
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");

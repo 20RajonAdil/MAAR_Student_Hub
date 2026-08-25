@@ -77,6 +77,8 @@ interface StoreState {
   errorJournal: ErrorJournalEntry[];
   conversations: AIConversation[];
   activity: ActivityEvent[];
+  hasHydrated: boolean;
+  setHasHydrated: (v: boolean) => void;
 
   // onboarding
   createProfile: (p: Omit<StudentProfile, "id" | "createdAt" | "onboardingComplete" | "learningPreferences">) => void;
@@ -132,6 +134,8 @@ export const useStore = create<StoreState>()(
       errorJournal: [],
       conversations: [],
       activity: [],
+      hasHydrated: false,
+      setHasHydrated: (v) => set({ hasHydrated: v }),
 
       createProfile: (p) =>
         set({
@@ -313,7 +317,12 @@ export const useStore = create<StoreState>()(
           activity: [],
         }),
     }),
-    { name: "maar-study-hub-demo-store" }
+    {
+      name: "maar-study-hub-demo-store",
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
+    }
   )
 );
 

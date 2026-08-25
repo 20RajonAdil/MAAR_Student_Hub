@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
         // OpenRouter asks apps to identify themselves — this is not the model name.
-        "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "https://maar-study-hub.local",
+        "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "https://maar-student-hub.vercel.app",
         "X-Title": "MAAR Study Hub",
       },
       body: JSON.stringify({
