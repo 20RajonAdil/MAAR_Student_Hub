@@ -49,6 +49,11 @@ Student context (use only what's relevant to the current question — don't forc
 ${ctx.noteExcerpts?.length ? `\nRelevant note excerpts:\n${ctx.noteExcerpts.map((n) => `[${n.title}]\n${n.excerpt}`).join("\n\n")}` : ""}
 `;
 
+// Allow extra time for a full teaching response — actual ceiling still
+// depends on your hosting plan (e.g. Vercel Hobby caps function duration
+// regardless of this value; Pro/Enterprise honour it).
+export const maxDuration = 30;
+
 export async function POST(req: NextRequest) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -78,8 +83,12 @@ export async function POST(req: NextRequest) {
   ];
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 28000);
+
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
+      signal: controller.signal,
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
@@ -94,14 +103,44 @@ export async function POST(req: NextRequest) {
         max_tokens: 900,
       }),
     });
+    clearTimeout(timeout);
 
     if (!res.ok) {
       const errText = await res.text();
+      // Log the real upstream status/body server-side only — never sent to
+      // the browser — so this is diagnosable from Vercel's function logs
+      // without ever exposing the key itself.
       console.error("OpenRouter error", res.status, errText);
-      return NextResponse.json(
-        { error: "The AI Tutor couldn't respond just now. Please try again in a moment." },
-        { status: 502 }
-      );
+
+      // Map the upstream status to a specific, student-safe message instead
+      // of one generic sentence for every possible failure — this is the
+      // difference between "try again" (useless) and "your OpenRouter
+      // account is out of credit" (actionable).
+      let message: string;
+      switch (res.status) {
+        case 401:
+        case 403:
+          message = "The AI Tutor's API key looks invalid or expired. (Check OPENROUTER_API_KEY in your host's environment settings.)";
+          break;
+        case 402:
+          message = "The AI Tutor is out of credit on OpenRouter. Add credit to the OpenRouter account and try again.";
+          break;
+        case 404:
+          message = "The AI Tutor's configured model isn't available right now. (Check MAAR_TUTOR_MODEL.)";
+          break;
+        case 408:
+          message = "The AI Tutor took too long to respond. Please try again.";
+          break;
+        case 429:
+          message = "The AI Tutor is getting a lot of requests right now — please wait a few seconds and try again.";
+          break;
+        default:
+          message =
+            res.status >= 500
+              ? "OpenRouter is having issues right now — this isn't something wrong with your account. Please try again shortly."
+              : `The AI Tutor couldn't respond just now (error ${res.status}). Please try again in a moment.`;
+      }
+      return NextResponse.json({ error: message }, { status: 502 });
     }
 
     const data = await res.json();
@@ -114,7 +153,11 @@ export async function POST(req: NextRequest) {
     // ever leaves the server.
     return NextResponse.json({ reply });
   } catch (err) {
-    console.error("Tutor route failure", err);
-    return NextResponse.json({ error: "Something went wrong reaching the AI Tutor." }, { status: 500 });
+    const timedOut = err instanceof Error && err.name === "AbortError";
+    console.error("Tutor route failure", timedOut ? "timeout" : err);
+    return NextResponse.json(
+      { error: timedOut ? "The AI Tutor took too long to respond. Please try again." : "Something went wrong reaching the AI Tutor." },
+      { status: timedOut ? 504 : 500 }
+    );
   }
 }
