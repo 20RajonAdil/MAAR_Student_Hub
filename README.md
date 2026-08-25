@@ -17,17 +17,32 @@ diagnostic → dashboard.
 
 ### AI Tutor setup
 
-The tutor calls [OpenRouter](https://openrouter.ai) from a server route
-(`app/api/tutor/route.ts`) so the API key and the underlying model name never
-reach the browser or the student. Add your key to `.env.local`:
+The tutor's default path calls [OpenRouter](https://openrouter.ai) from a
+server route (`app/api/tutor/route.ts`) so the API key and the underlying
+model name never reach the browser or the student. Add your key to
+`.env.local`:
 
 ```
 OPENROUTER_API_KEY=sk-or-...
 ```
 
-Only one model is used, set server-side in `app/api/tutor/route.ts` via
-`MAAR_TUTOR_MODEL` (defaults to a strong general-purpose model suited to
-teaching). Nothing in the UI ever names the model.
+A list of models (7 by default) is tried in order — see `lib/ai/models.ts`,
+overridable via `MAAR_TUTOR_MODELS`. If a model is out of credit or
+rate-limited the next one in the list is tried automatically; nothing in
+the UI ever names the model.
+
+**On-device fallback.** If every configured OpenRouter model is out of
+credit/rate-limited (or no `OPENROUTER_API_KEY` is set at all), the browser
+automatically switches to a local tutor built on
+[WebLLM](https://github.com/mlc-ai/web-llm) running Llama-3.2-3B-Instruct
+(or the 1B variant on lower-memory devices) via WebGPU — no key, no
+account, no server call. The model downloads once and is cached by the
+browser; requires a WebGPU-capable browser (recent Chrome/Edge; Safari/
+Firefox support is still rolling out). See `lib/ai/webllm.ts`.
+
+Either way, the tutor is grounded in the student's own resources (primary)
+and notes (secondary/fallback) via simple on-device keyword retrieval —
+see `lib/ai/retrieval.ts` and `lib/ai/resourceStore.ts`.
 
 ## What's implemented
 
@@ -45,10 +60,13 @@ teaching). Nothing in the UI ever names the model.
   contentEditable), Practice (per-topic mini-quiz that raises mastery),
   Weaknesses (**"I'm ready to prove it"** verification quiz — a weakness only
   resolves on a passing check), Error Journal, Progress.
-- **AI Tutor** (`/tutor`) — chat UI with simple client-side note retrieval
-  (keyword match against the student's own notes, shown as source pills),
-  server-side system prompt that enforces teach-don't-just-answer behaviour,
-  external-knowledge disclosure, and "ask when unsure."
+- **AI Tutor** (`/tutor`) — chat UI grounded by on-device keyword retrieval
+  over the student's uploaded resources (primary) and notes (secondary),
+  shown as source pills. Multi-model OpenRouter cloud tutor by default,
+  automatic fallback to a fully local WebLLM (Llama 3.2) tutor when cloud
+  models are exhausted; per-reply response-time indicator. Same
+  teach-don't-just-answer, external-knowledge-disclosure, "ask/say when
+  unsure" system prompt either way.
 - **Study Coach** — technique picker (focus block / active recall / spaced
   repetition / interleaving), timer, post-session retrieval check.
 - **Notes, Resources, Past Papers, Progress, Settings** — functional shells;
@@ -77,10 +95,12 @@ teaching). Nothing in the UI ever names the model.
 - **Auth & database.** Everything currently lives in the browser via
   Zustand + localStorage. Swap `lib/store.ts` for real API calls behind a
   proper backend with per-student auth before this holds real student data.
-- **Document upload/OCR/indexing.** `/resources` and `/past-papers` show the
-  intended UX (processing states, status pills) but don't actually extract
-  or index text — wire in real storage + OCR + a retrieval index, then feed
-  real excerpts into the tutor's context builder in `app/tutor/page.tsx`.
+- **Document upload/indexing.** `/resources` now really extracts text
+  on-device (PDF via `pdfjs-dist`, plain text/.md directly) and stores it
+  in IndexedDB (`lib/ai/resourceStore.ts`), with keyword-overlap retrieval
+  feeding real excerpts into the tutor. Not yet done: OCR for scanned/
+  image-only PDFs, `.docx` support, and semantic (embedding-based) rather
+  than keyword retrieval. `/past-papers` is still a UI-only stub.
 - **Past-paper marking.** No real mark-scheme comparison yet — the upload
   flow and "estimated score, not an official mark" framing are in place,
   ready for a real analysis pipeline.

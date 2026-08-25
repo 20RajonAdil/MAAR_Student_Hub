@@ -1,13 +1,15 @@
 "use client";
 
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Send, Sparkles, FileText, Globe } from "lucide-react";
+import { Send, Sparkles, FileText, Globe, Laptop, Clock } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useRequireProfile } from "@/lib/useRequireProfile";
 import { useStore, SUBJECT_LIBRARY } from "@/lib/store";
 import { Button, Card, Pill } from "@/components/ui";
 import type { AIMessage } from "@/lib/types";
+import { retrieveContext } from "@/lib/ai/retrieval";
+import { answerLocally, checkWebLLMAvailability, type WebLLMLoadProgress } from "@/lib/ai/webllm";
 
 function TutorChat() {
   const { ready, profile } = useRequireProfile();
@@ -24,28 +26,41 @@ function TutorChat() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadStage, setLoadStage] = useState<string | null>(null); // e.g. "Downloading local model…"
   const [error, setError] = useState<string | null>(null);
+  const [webLLMSupported, setWebLLMSupported] = useState<boolean | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setWebLLMSupported(checkWebLLMAvailability().supported);
+  }, []);
 
   const conversation = conversations.find((c) => c.id === conversationId);
   const messages = conversation?.messages ?? [];
 
-  // Very simple client-side "retrieval": keyword-overlap match against the
-  // student's own notes for this subject, so the tutor prefers real
-  // uploaded/written material over general knowledge.
-  function relevantNoteExcerpts(question: string) {
-    const words = question.toLowerCase().split(/\W+/).filter((w) => w.length > 3);
-    return notes
-      .filter((n) => (subjectId ? n.subjectId === subjectId : true))
-      .map((n) => {
-        const text = n.contentHtml.replace(/<[^>]+>/g, " ");
-        const hits = words.filter((w) => text.toLowerCase().includes(w)).length;
-        return { note: n, hits, text };
-      })
-      .filter((x) => x.hits > 0)
-      .sort((a, b) => b.hits - a.hits)
-      .slice(0, 2)
-      .map((x) => ({ title: x.note.title, excerpt: x.text.slice(0, 400) }));
+  async function runLocalTutor(
+    systemContext: Parameters<typeof buildSystemContextString>[0],
+    history: AIMessage[]
+  ): Promise<{ reply: string; elapsedMs: number } | null> {
+    const availability = checkWebLLMAvailability();
+    if (!availability.supported) return null;
+
+    const onProgress = (p: WebLLMLoadProgress) => {
+      setLoadStage(p.progress < 1 ? "Loading the on-device tutor…" : "Almost ready…");
+    };
+    try {
+      const result = await answerLocally(
+        buildSystemContextString(systemContext),
+        history.map((m) => ({ role: m.role, content: m.content })),
+        onProgress
+      );
+      return result;
+    } catch (err) {
+      console.error("Local tutor failed", err);
+      return null;
+    } finally {
+      setLoadStage(null);
+    }
   }
 
   async function send() {
@@ -62,8 +77,20 @@ function TutorChat() {
     const studentMsg: AIMessage = { id: `${Date.now()}`, role: "student", content: question, createdAt: new Date().toISOString() };
     appendMessage(convoId, studentMsg);
 
-    const noteExcerpts = relevantNoteExcerpts(question);
+    const excerpts = await retrieveContext(question, notes, subjectId);
     const activeWeaknesses = weaknesses.filter((w) => (subjectId ? w.subjectId === subjectId : true) && w.status !== "resolved").map((w) => w.topicName);
+    const usedSources = excerpts.map((e) => ({ title: e.title, type: e.source }));
+
+    const systemContext = {
+      studentName: profile.name,
+      educationLevel: profile.educationLevel,
+      examBoard: profile.examBoard,
+      subjectName: subject?.name,
+      recentWeaknesses: activeWeaknesses,
+      noteExcerpts: excerpts.map((e) => ({ title: e.title, excerpt: e.excerpt })),
+    };
+    const history = [...messages, studentMsg];
+    const startedAt = Date.now();
 
     setLoading(true);
     try {
@@ -71,26 +98,51 @@ function TutorChat() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: [...messages, studentMsg].map((m) => ({ role: m.role, content: m.content })),
-          context: {
-            studentName: profile.name,
-            educationLevel: profile.educationLevel,
-            examBoard: profile.examBoard,
-            subjectName: subject?.name,
-            recentWeaknesses: activeWeaknesses,
-            noteExcerpts,
-          },
+          messages: history.map((m) => ({ role: m.role, content: m.content })),
+          context: systemContext,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "The AI Tutor couldn't respond.");
-      appendMessage(convoId, {
-        id: `${Date.now()}-r`,
-        role: "tutor",
-        content: data.reply,
-        usedSources: noteExcerpts.map((n) => ({ title: n.title, type: "note" as const })),
-        createdAt: new Date().toISOString(),
-      });
+
+      if (res.ok && data.reply) {
+        appendMessage(convoId, {
+          id: `${Date.now()}-r`,
+          role: "tutor",
+          content: data.reply,
+          usedSources,
+          createdAt: new Date().toISOString(),
+          elapsedMs: data.elapsedMs ?? Date.now() - startedAt,
+          answeredBy: "cloud",
+        });
+        return;
+      }
+
+      // Cloud tutor failed. If it signalled exhaustion (every configured
+      // model out of credit/rate-limited, or no key at all), fall back to
+      // the on-device tutor automatically rather than showing an error.
+      if (data.allExhausted) {
+        const local = await runLocalTutor(systemContext, history);
+        if (local) {
+          appendMessage(convoId, {
+            id: `${Date.now()}-r`,
+            role: "tutor",
+            content: local.reply,
+            usedSources,
+            createdAt: new Date().toISOString(),
+            elapsedMs: local.elapsedMs,
+            answeredBy: "local",
+          });
+          return;
+        }
+        setError(
+          webLLMSupported === false
+            ? "The AI Tutor is temporarily unavailable and this browser/device doesn't support the on-device fallback (WebGPU isn't available). Try a recent version of Chrome or Edge, or try again later."
+            : "The AI Tutor is temporarily unavailable and the on-device fallback couldn't start. Please try again."
+        );
+        return;
+      }
+
+      throw new Error(data.error || "The AI Tutor couldn't respond.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
@@ -110,7 +162,7 @@ function TutorChat() {
         </div>
         <p className="mt-1 text-sm text-[var(--color-ink-soft)]">
           Asks what it doesn't know, teaches with hints before answers, and tells you when it's used something
-          outside your notes.
+          outside your notes and resources.
         </p>
 
         <div ref={scrollRef} className="thin-scroll mt-4 flex-1 overflow-y-auto pr-1">
@@ -130,19 +182,30 @@ function TutorChat() {
                   }`}
                 >
                   <p className="whitespace-pre-wrap">{m.content}</p>
-                  {m.usedSources && m.usedSources.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {m.usedSources.map((s, i) => (
+                  {m.role === "tutor" && (m.usedSources?.length || m.elapsedMs !== undefined || m.answeredBy === "local") && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {m.usedSources?.map((s, i) => (
                         <Pill key={i} tone="primary">
-                          {s.type === "note" ? <FileText size={11} /> : <Globe size={11} />} {s.title}
+                          {s.type === "note" ? <FileText size={11} /> : s.type === "resource" ? <FileText size={11} /> : <Globe size={11} />}{" "}
+                          {s.title}
                         </Pill>
                       ))}
+                      {m.answeredBy === "local" && (
+                        <Pill tone="amber">
+                          <Laptop size={11} /> On-device
+                        </Pill>
+                      )}
+                      {m.elapsedMs !== undefined && (
+                        <Pill tone="neutral">
+                          <Clock size={11} /> {(m.elapsedMs / 1000).toFixed(1)}s
+                        </Pill>
+                      )}
                     </div>
                   )}
                 </div>
               </div>
             ))}
-            {loading && <p className="text-sm text-[var(--color-ink-faint)]">Thinking…</p>}
+            {loading && <p className="text-sm text-[var(--color-ink-faint)]">{loadStage ?? "Thinking…"}</p>}
             {error && <p className="text-sm text-[var(--color-flag)]">{error}</p>}
           </div>
         </div>
@@ -176,6 +239,38 @@ function TutorChat() {
       `}</style>
     </AppShell>
   );
+}
+
+interface SystemContext {
+  studentName?: string;
+  educationLevel?: string;
+  examBoard?: string;
+  subjectName?: string;
+  recentWeaknesses?: string[];
+  noteExcerpts?: { title: string; excerpt: string }[];
+}
+
+// Mirrors the server's system prompt (app/api/tutor/route.ts) so the local
+// WebLLM tutor follows the same ground rules and grounding behaviour as
+// the cloud tutor — same "don't invent, say when it's not in the
+// student's materials" instructions either way.
+function buildSystemContextString(ctx: SystemContext): string {
+  return `You are the AI Tutor inside MAAR Study Hub, running locally on this device. You are a teaching assistant, not a replacement for a real teacher.
+
+Ground rules:
+- Teach, don't just answer. Guide with hints before revealing full solutions.
+- Prefer the student's own notes/resources (given below) over general knowledge when relevant. Say plainly when you're using outside knowledge.
+- Never invent facts, sources, or marks. If the answer isn't in the student's materials, say so directly instead of guessing.
+- Be encouraging and specific.
+- Keep the answer short — a maximum of about 20 lines.
+
+Student context:
+- Name: ${ctx.studentName ?? "unknown"}
+- Level: ${ctx.educationLevel ?? "unspecified"}${ctx.examBoard ? `, exam board: ${ctx.examBoard}` : ""}
+- Subject: ${ctx.subjectName ?? "general"}
+- Recent weak areas: ${ctx.recentWeaknesses?.length ? ctx.recentWeaknesses.join(", ") : "none on record"}
+${ctx.noteExcerpts?.length ? `\nRelevant excerpts from the student's own materials:\n${ctx.noteExcerpts.map((n) => `[${n.title}]\n${n.excerpt}`).join("\n\n")}` : "\nNo matching material was found in the student's notes or resources for this question — say so if it depends on their specific course content."}
+`;
 }
 
 export default function TutorPage() {

@@ -175,6 +175,8 @@ export interface AIMessage {
   content: string;
   usedSources?: { title: string; type: "note" | "resource" | "external" }[];
   createdAt: string;
+  elapsedMs?: number; // how long this reply took to generate
+  answeredBy?: "cloud" | "local"; // which tutor engine produced this reply
 }
 
 export interface AIConversation {
