@@ -26,6 +26,9 @@ import type {
   ActivityEvent,
   SubjectId,
   LearningPreferenceSignal,
+  Resource,
+  PastPaper,
+  MasterySnapshot,
 } from "./types";
 
 function id() {
@@ -77,6 +80,9 @@ interface StoreState {
   errorJournal: ErrorJournalEntry[];
   conversations: AIConversation[];
   activity: ActivityEvent[];
+  resources: Resource[];
+  pastPapers: PastPaper[];
+  masteryHistory: MasterySnapshot[];
   hasHydrated: boolean;
   setHasHydrated: (v: boolean) => void;
 
@@ -115,6 +121,12 @@ interface StoreState {
   // activity
   logActivity: (e: Omit<ActivityEvent, "id" | "at">) => void;
 
+  // resources & past papers (metadata only — bytes live in IndexedDB)
+  addResource: (r: Omit<Resource, "id" | "uploadedAt">) => Resource;
+  removeResource: (resourceId: string) => void;
+  addPastPaper: (p: Omit<PastPaper, "id" | "uploadedAt">) => PastPaper;
+  removePastPaper: (paperId: string) => void;
+
   // topic mastery
   updateTopicMastery: (topicId: string, delta: number, newStatus?: Topic["status"]) => void;
 
@@ -134,6 +146,9 @@ export const useStore = create<StoreState>()(
       errorJournal: [],
       conversations: [],
       activity: [],
+      resources: [],
+      pastPapers: [],
+      masteryHistory: [],
       hasHydrated: false,
       setHasHydrated: (v) => set({ hasHydrated: v }),
 
@@ -285,7 +300,23 @@ export const useStore = create<StoreState>()(
 
       logActivity: (e) => set((s) => ({ activity: [{ ...e, id: id(), at: nowISO() }, ...s.activity].slice(0, 50) })),
 
-      updateTopicMastery: (topicId, delta, newStatus) =>
+      addResource: (r) => {
+        const resource: Resource = { ...r, id: id(), uploadedAt: nowISO() };
+        set((s) => ({ resources: [resource, ...s.resources] }));
+        get().logActivity({ label: `Uploaded "${resource.title}"`, subjectId: resource.subjectId, kind: "upload" });
+        return resource;
+      },
+      removeResource: (resourceId) => set((s) => ({ resources: s.resources.filter((r) => r.id !== resourceId) })),
+
+      addPastPaper: (p) => {
+        const paper: PastPaper = { ...p, id: id(), uploadedAt: nowISO() };
+        set((s) => ({ pastPapers: [paper, ...s.pastPapers] }));
+        get().logActivity({ label: `Uploaded past paper "${paper.title}"`, subjectId: paper.subjectId, kind: "past-paper" });
+        return paper;
+      },
+      removePastPaper: (paperId) => set((s) => ({ pastPapers: s.pastPapers.filter((p) => p.id !== paperId) })),
+
+      updateTopicMastery: (topicId, delta, newStatus) => {
         set((s) => ({
           subjects: s.subjects.map((sub) => ({
             ...sub,
@@ -301,7 +332,29 @@ export const useStore = create<StoreState>()(
                 : t
             ),
           })),
-        })),
+        }));
+
+        // Record today's average-mastery snapshot for whichever subject
+        // owns this topic, so Progress can chart real change over time
+        // (one snapshot per subject per calendar day — same-day updates
+        // overwrite rather than duplicate).
+        const owningSubject = get().subjects.find((sub) => sub.topics.some((t) => t.id === topicId));
+        if (owningSubject) {
+          const avgMastery = owningSubject.topics.length
+            ? Math.round(owningSubject.topics.reduce((a, t) => a + t.masteryScore, 0) / owningSubject.topics.length)
+            : 0;
+          const today = nowISO().slice(0, 10);
+          set((s) => {
+            const existingIdx = s.masteryHistory.findIndex((m) => m.subjectId === owningSubject.id && m.date === today);
+            if (existingIdx >= 0) {
+              const updated = [...s.masteryHistory];
+              updated[existingIdx] = { ...updated[existingIdx], avgMastery };
+              return { masteryHistory: updated };
+            }
+            return { masteryHistory: [...s.masteryHistory, { id: id(), subjectId: owningSubject.id, date: today, avgMastery }] };
+          });
+        }
+      },
 
       // NOTE: `conversations` (AI Tutor chat history) is deliberately left
       // out of this reset. Chat history is preserved permanently — even a
@@ -318,6 +371,9 @@ export const useStore = create<StoreState>()(
           planItems: [],
           errorJournal: [],
           activity: [],
+          resources: [],
+          pastPapers: [],
+          masteryHistory: [],
         }),
     }),
     {

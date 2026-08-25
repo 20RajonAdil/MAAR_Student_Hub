@@ -193,3 +193,39 @@ export interface ActivityEvent {
   at: string;
   kind: "practice" | "note" | "upload" | "verification" | "diagnostic" | "session" | "past-paper";
 }
+
+/** A daily snapshot of a subject's average mastery, so Progress can chart
+ *  real change over time instead of only showing the current value. */
+export interface MasterySnapshot {
+  id: string;
+  subjectId: SubjectId;
+  date: string; // ISO date (yyyy-mm-dd), one snapshot per subject per day
+  avgMastery: number; // 0-100
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Uploaded documents. The actual file bytes live in IndexedDB (see
+// lib/fileStore.ts) — this is just the metadata, so lists/search stay fast
+// and the localStorage-backed store never has to hold binary data.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface Resource {
+  id: string;
+  fileId: string; // key into lib/fileStore.ts IndexedDB store
+  title: string;
+  subjectId: SubjectId;
+  topic?: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+}
+
+export interface PastPaper {
+  id: string;
+  fileId: string; // key into lib/fileStore.ts IndexedDB store
+  title: string;
+  subjectId?: SubjectId;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+}

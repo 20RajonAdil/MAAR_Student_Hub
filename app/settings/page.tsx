@@ -7,6 +7,7 @@ import { Trash2, FolderKey, Download, Upload, AlertTriangle } from "lucide-react
 import { AppShell } from "@/components/AppShell";
 import { useRequireProfile } from "@/lib/useRequireProfile";
 import { useStore } from "@/lib/store";
+import { deleteFileBlob } from "@/lib/fileStore";
 import { Button, Card } from "@/components/ui";
 import type { LearningPreferenceSignal } from "@/lib/types";
 
@@ -27,6 +28,8 @@ export default function SettingsPage() {
   const { ready, profile } = useRequireProfile();
   const setLearningPreferences = useStore((s) => s.setLearningPreferences);
   const resetAll = useStore((s) => s.resetAll);
+  const resources = useStore((s) => s.resources);
+  const pastPapers = useStore((s) => s.pastPapers);
   const router = useRouter();
   const [allowExternal, setAllowExternal] = useState(true);
   const [selected, setSelected] = useState<string[]>(profile?.learningPreferences.map((p) => p.type) ?? []);
@@ -173,8 +176,18 @@ export default function SettingsPage() {
             className="mt-3 border-[var(--color-flag)] text-[var(--color-flag)]"
             onClick={() => {
               if (confirm("Delete your account and local study data? Your AI Tutor chat history is kept. This can't be undone.")) {
-                resetAll();
-                router.push("/");
+                // Metadata for resources/past papers lives in the regular
+                // store (cleared by resetAll below); the actual file bytes
+                // live in IndexedDB and need to be purged separately or
+                // they'd be orphaned on disk with nothing referencing them.
+                Promise.all(
+                  [...resources.map((r) => r.fileId), ...pastPapers.map((p) => p.fileId)].map((fileId) =>
+                    deleteFileBlob(fileId).catch(() => {})
+                  )
+                ).finally(() => {
+                  resetAll();
+                  router.push("/");
+                });
               }
             }}
           >
