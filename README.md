@@ -26,10 +26,12 @@ model name never reach the browser or the student. Add your key to
 OPENROUTER_API_KEY=sk-or-...
 ```
 
-A list of models (7 by default) is tried in order — see `lib/ai/models.ts`,
+A list of models (27 by default) is tried in order — see `lib/ai/models.ts`,
 overridable via `MAAR_TUTOR_MODELS`. If a model is out of credit or
 rate-limited the next one in the list is tried automatically; nothing in
-the UI ever names the model.
+the UI ever names the model. Each model gets an 8s timeout so a hung
+provider can't stall the whole chain — with 27 models this keeps the
+worst-case wait bounded before falling back to the local tutor below.
 
 **On-device fallback.** If every configured OpenRouter model is out of
 credit/rate-limited (or no `OPENROUTER_API_KEY` is set at all), the browser

@@ -75,8 +75,10 @@ function studentSafeMessage(status: number): string {
 // Allow extra time for a full teaching response, and for trying several
 // models in sequence — actual ceiling still depends on your hosting plan
 // (e.g. Vercel Hobby caps function duration regardless of this value;
-// Pro/Enterprise honour it).
-export const maxDuration = 45;
+// Pro/Enterprise honour it). With 27 models configured by default, this
+// is set as high as most hosts will realistically allow — see the
+// shortened per-model timeout below, which matters more in practice.
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -119,7 +121,12 @@ export async function POST(req: NextRequest) {
   for (const model of models) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 25000);
+      // Shortened from a single-model 25s to 8s per model now that up to
+      // 27 models can be tried in one request — a slow/hanging provider
+      // shouldn't be able to eat the whole request budget on its own.
+      // Fast failures (e.g. an immediate 402) aren't affected by this at
+      // all; this only bounds how long we wait for one that's hung.
+      const timeout = setTimeout(() => controller.abort(), 8000);
 
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
