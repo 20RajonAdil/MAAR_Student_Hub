@@ -303,6 +303,10 @@ export const useStore = create<StoreState>()(
           })),
         })),
 
+      // NOTE: `conversations` (AI Tutor chat history) is deliberately left
+      // out of this reset. Chat history is preserved permanently — even a
+      // full "reset my data" from Settings must not delete it. There is no
+      // action anywhere in the store that clears `conversations`.
       resetAll: () =>
         set({
           profile: null,
@@ -313,7 +317,6 @@ export const useStore = create<StoreState>()(
           sessions: [],
           planItems: [],
           errorJournal: [],
-          conversations: [],
           activity: [],
         }),
     }),

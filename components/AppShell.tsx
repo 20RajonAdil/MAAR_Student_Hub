@@ -12,6 +12,7 @@ import {
   FileStack,
   TrendingUp,
   Timer,
+  History,
   Settings,
 } from "lucide-react";
 import clsx from "clsx";
@@ -21,6 +22,7 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/subjects", label: "Subjects", icon: BookOpen },
   { href: "/tutor", label: "AI Tutor", icon: MessagesSquare },
+  { href: "/history", label: "Chat History", icon: History },
   { href: "/notes", label: "Notes", icon: NotebookPen },
   { href: "/resources", label: "Resources", icon: FolderOpen },
   { href: "/practice", label: "Practice", icon: Target },

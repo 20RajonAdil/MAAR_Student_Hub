@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useRef, useState } from "react";
 import { Trash2, FolderKey, Download, Upload, AlertTriangle } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
@@ -159,14 +160,19 @@ export default function SettingsPage() {
         <Card className="mt-4 border-[var(--color-flag)]/30">
           <h2 className="font-semibold">Data &amp; account</h2>
           <p className="mt-1 text-sm text-[var(--color-ink-soft)]">
-            This demo build stores everything only in your browser. Deleting your account removes it from here.
+            This demo build stores everything only in your browser. Deleting your account removes your profile,
+            subjects, notes, and progress from here. Your AI Tutor chat history is kept — see{" "}
+            <Link href="/history" className="underline">
+              Chat History
+            </Link>
+            .
           </p>
           <Button
             size="sm"
             variant="secondary"
             className="mt-3 border-[var(--color-flag)] text-[var(--color-flag)]"
             onClick={() => {
-              if (confirm("Delete your account and all local data? This can't be undone.")) {
+              if (confirm("Delete your account and local study data? Your AI Tutor chat history is kept. This can't be undone.")) {
                 resetAll();
                 router.push("/");
               }
