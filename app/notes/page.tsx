@@ -87,6 +87,7 @@ export default function NotesPage() {
                 </div>
                 <p className="mb-3 text-xs text-[var(--color-ink-faint)]">Autosaves as you type · last updated {new Date(active.updatedAt).toLocaleString("en-GB")}</p>
                 <RichEditor
+                  key={active.id}
                   html={active.contentHtml}
                   onChange={(contentHtml) => upsertNote({ id: active.id, subjectId: active.subjectId, contentHtml })}
                   placeholder="Start writing…"
